@@ -1,7 +1,8 @@
+#psutil version coded by Jurgen Pfeifer
+#Extends compatability, should run on Debian and Ubuntu
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# Coded by Jürgen Pfeifer
-
+#
 import time
 import psutil as PS
 import socket
