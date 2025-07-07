@@ -1,86 +1,83 @@
 # Created by: Michael Klements
 # For Raspberry Pi Desktop Case with OLED Stats Display
 # Base on Adafruit Blinka & SSD1306 Libraries
-# Installation & Setup Instructions - https://www.the-diy-life.com/add-an-oled-stats-display-to-raspberry-pi-os-bullseye/
+# Installation & Setup Instructions - https://www.the-diy-life.com/add-an-oled-stats-display-to-raspberry-pi-os-bullseye/#!/usr/bin/env python3
+# Modified for 128x32 OLED display
+
 import time
 import board
 import busio
 import gpiozero
-
 from PIL import Image, ImageDraw, ImageFont
 import adafruit_ssd1306
-
 import subprocess
 
 # Use gpiozero to control the reset pin
-oled_reset_pin = gpiozero.OutputDevice(4, active_high=False)  # GPIO 4 for reset, active low
+oled_reset_pin = gpiozero.OutputDevice(4, active_high=False)
 
 # Display Parameters
 WIDTH = 128
-HEIGHT = 64
-BORDER = 5
-
-# Display Refresh
+HEIGHT = 32  # Changed from 64
 LOOPTIME = 1.0
 
-# Use I2C for communication
+# I2C communication
 i2c = board.I2C()
 
-# Manually reset the display (high -> low -> high for reset pulse)
+# Manual reset pulse
 oled_reset_pin.on()
-time.sleep(0.1)  # Delay for a brief moment
-oled_reset_pin.off()  # Toggle reset pin low
-time.sleep(0.1)  # Wait for reset
-oled_reset_pin.on()  # Turn reset pin back high
+time.sleep(0.1)
+oled_reset_pin.off()
+time.sleep(0.1)
+oled_reset_pin.on()
 
-# Create the OLED display object
+# Create OLED object
 oled = adafruit_ssd1306.SSD1306_I2C(WIDTH, HEIGHT, i2c, addr=0x3C)
-
-# Clear the display
 oled.fill(0)
 oled.show()
 
-# Create a blank image for drawing
-image = Image.new("1", (oled.width, oled.height))
-
-# Get drawing object to draw on image
+# Image and drawing setup
+image = Image.new("1", (WIDTH, HEIGHT))
 draw = ImageDraw.Draw(image)
+font = ImageFont.truetype("PixelOperator.ttf", 16)
 
-# Draw a white background
-draw.rectangle((0, 0, oled.width, oled.height), outline=255, fill=255)
-
-font = ImageFont.truetype('PixelOperator.ttf', 16)
+page = 0  # Alternating display state
 
 while True:
-    # Draw a black filled box to clear the image
-    draw.rectangle((0, 0, oled.width, oled.height), outline=0, fill=0)
+    draw.rectangle((0, 0, WIDTH, HEIGHT), outline=0, fill=0)
 
-    # Shell scripts for system monitoring from here : https://unix.stackexchange.com/questions/119126/command-to-display-memory-usage-disk-usage-and-cpu-load
-    cmd = "hostname -I | cut -d\' \' -f1"
-    IP = subprocess.check_output(cmd, shell=True)
-    cmd = "top -bn1 | grep load | awk '{printf \"CPU: %.2f\", $(NF-2)}'"
-    CPU = subprocess.check_output(cmd, shell=True)
-    cmd = "free -m | awk 'NR==2{printf \"%.1f %.1f %.1f\", $3/1024,$2/1024,($3/$2)*100}'"
-    MemUsage = subprocess.check_output(cmd, shell=True)
-    mem_parts = MemUsage.decode('utf-8').strip().split()
-    mem_used_gb = mem_parts[0]
-    mem_total_gb = mem_parts[1]
-    mem_percent = mem_parts[2]
+    # System information
+    IP = subprocess.check_output("hostname -I | cut -d' ' -f1", shell=True).decode().strip()
+    CPU = subprocess.check_output("top -bn1 | grep load | awk '{printf \"CPU: %.2f\", $(NF-2)}'", shell=True).decode().strip()
+    Temp = subprocess.check_output("vcgencmd measure_temp | cut -f2 -d '='", shell=True).decode().strip()
+
+    mem_parts = subprocess.check_output(
+        "free -m | awk 'NR==2{printf \"%.1f %.1f %.1f\", $3/1024,$2/1024,($3/$2)*100}'",
+        shell=True
+    ).decode().strip().split()
+    mem_used_gb, mem_total_gb, mem_percent = mem_parts
     mem_display = f"Mem: {mem_used_gb}/{mem_total_gb}GB {mem_percent}%"
-    cmd = "df -h | awk '$NF==\"/\"{printf \"Disk: %d/%dGB %s\", $3,$2,$5}'"
-    Disk = subprocess.check_output(cmd, shell=True)
-    cmd = "vcgencmd measure_temp |cut -f 2 -d '='"
-    Temp = subprocess.check_output(cmd, shell=True)
 
-    # Pi Stats Display
-    draw.text((0, 0), "IP: " + str(IP, 'utf-8'), font=font, fill=255)
-    draw.text((0, 16), str(CPU, 'utf-8') + "LA", font=font, fill=255)
-    draw.text((80, 16), str(Temp, 'utf-8'), font=font, fill=255)
-    draw.text((0, 32), mem_display, font=font, fill=255)
-    draw.text((0, 48), str(Disk, 'utf-8'), font=font, fill=255)
+    Disk = subprocess.check_output(
+        "df -h | awk '$NF==\"/\"{printf \"Disk: %d/%dGB %s\", $3,$2,$5}'",
+        shell=True
+    ).decode().strip()
 
-    # Display the image
+    if page == 0:
+        # Page 1
+        draw.text((0, 0), f"IP: {IP}", font=font, fill=255)
+        draw.text((0, 16), f"{CPU}LA", font=font, fill=255)
+        draw.text((80, 16), Temp, font=font, fill=255)
+    else:
+        # Page 2
+        draw.text((0, 0), mem_display, font=font, fill=255)
+        draw.text((0, 16), Disk, font=font, fill=255)
+
     oled.image(image)
+    oled.show()
+    time.sleep(LOOPTIME)
+
+    page = 1 - page
+
     oled.show()
 
     # Wait for the next loop
